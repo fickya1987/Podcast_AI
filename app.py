@@ -219,7 +219,7 @@ class PodcastGenerator:
         else:
             language_instruction = f"- The podcast MUST be in {language} language"
 
-        system_prompt = f"""
+system_prompt = f"""
 You are a professional podcast generator. Your task is to generate a professional podcast script based on the user input.
 {language_instruction}
 - The podcast should have 2 speakers.
@@ -231,9 +231,6 @@ You are a professional podcast generator. Your task is to generate a professiona
 Follow this example structure:
 {example}
 """
-# Implement the API call or logic to generate the script
-return json.loads(example)
-
 
 
         user_prompt = f"Please generate a podcast script based on the following user input:\n{prompt}"
@@ -247,8 +244,6 @@ return json.loads(example)
             raise ValueError("API key not found. Please add GENAI_API_KEY to your .env file.")
 
 
-
-        
         genai.configure(api_key=api_key)
 
         generation_config = {
@@ -269,18 +264,28 @@ return json.loads(example)
         system_instruction=system_prompt
         )
 
+    async def generate_script(self, prompt: str, language: str, api_key: str) -> Dict:
+        genai.configure(api_key=api_key)
+
+        messages = [{"role": "user", "content": prompt}]
+        generation_config = {
+            "temperature": 1.0,
+            "max_output_tokens": 2048
+        }
+        model = "gemini-1.5-flash-002"  # Example model name, update as needed
+
         try:
-            response = await model.generate_content_async(messages)
+            response = await genai.chat_async(messages=messages, model=model, generation_config=generation_config)
         except Exception as e:
             if "API key not valid" in str(e):
-                raise gr.Error("Invalid API key. Please check your .env file.")
+                st.error("Invalid API key. Please check your .env file.")
             elif "rate limit" in str(e).lower():
-                raise gr.Error("Rate limit exceeded for the API key. Please try again later.")
+                st.error("Rate limit exceeded for the API key. Please try again later.")
             else:
-                raise gr.Error(f"Failed to generate podcast script: {e}")
+                st.error(f"Failed to generate podcast script: {e}")
+            return {}
 
-        print(f"Generated podcast script:\n{response.text}")
-        
+        st.success("Generated podcast script successfully!")
         return json.loads(response.text)
 
     async def tts_generate(self, text: str, speaker: int, speaker1: str, speaker2: str) -> str:

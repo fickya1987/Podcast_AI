@@ -10,37 +10,97 @@ from typing import List, Dict, Tuple
 load_dotenv()
 
 class PodcastGenerator:
-    async def generate_script(self, prompt: str, language: str, api_key: str) -> Dict:
-        # Code for generating script here
+    def __init__(self):
         pass
+
+    async def generate_script(self, prompt: str, language: str, api_key: str) -> Dict:
+        genai.configure(api_key=api_key)
+
+        messages = [{"role": "user", "content": prompt}]
+        generation_config = {
+            "temperature": 0.7,
+            "max_output_tokens": 2048
+        }
+        model = "gemini-1.5-turbo"  # Example model name, update as needed
+
+        try:
+            response = await genai.chat_async(messages=messages, model=model, generation_config=generation_config)
+        except Exception as e:
+            if "API key not valid" in str(e):
+                st.error("Invalid API key. Please check your .env file.")
+            elif "rate limit" in str(e).lower():
+                st.error("Rate limit exceeded for the API key. Please try again later.")
+            else:
+                st.error(f"Failed to generate podcast script: {e}")
+            return {}
+
+        st.success("Generated podcast script successfully!")
+        return json.loads(response.text)
 
     async def tts_generate(self, text: str, speaker: int, speaker1: str, speaker2: str) -> str:
-        # Code for TTS generation here
-        pass
+        voice = speaker1 if speaker == 1 else speaker2
+        speech = edge_tts.Communicate(text, voice)
+
+        temp_filename = f"temp_{uuid.uuid4()}.wav"
+        try:
+            await speech.save(temp_filename)
+            return temp_filename
+        except Exception as e:
+            if os.path.exists(temp_filename):
+                os.remove(temp_filename)
+            raise e
 
     async def combine_audio_files(self, audio_files: List[str]) -> str:
-        # Code for combining audio files here
-        pass
+        combined_audio = AudioSegment.empty()
+        for audio_file in audio_files:
+            combined_audio += AudioSegment.from_file(audio_file)
+            os.remove(audio_file)  # Clean up temporary files
 
-    async def generate_podcast(self, input_text: str, language: str, speaker1: str, speaker2: str, api_key: str) -> Tuple[str, str]:
-        # Code for generating the podcast here
-        pass
+        output_filename = f"output_{uuid.uuid4()}.wav"
+        combined_audio.export(output_filename, format="wav")
+        return output_filename
+
+async def generate_podcast(self, input_text: str, language: str, speaker1: str, speaker2: str, api_key: str) -> Tuple[str, str]:
+        st.info("Generating podcast script...")
+        start_time = time.time()
+        podcast_json = await self.generate_script(input_text, language, api_key)
+        end_time = time.time()
+        st.success(f"Successfully generated podcast script in {(end_time - start_time):.2f} seconds!")
+
+        # Collect running text for display
+        running_text = "\n".join([f"Speaker {item['speaker']}: {item['line']}" for item in podcast_json['podcast']])
+
+        st.info("Generating podcast audio files...")
+        start_time = time.time()
+        audio_files = await asyncio.gather(*[self.tts_generate(item['line'], item['speaker'], speaker1, speaker2) for item in podcast_json['podcast']])
+        end_time = time.time()
+        st.success(f"Successfully generated podcast audio files in {(end_time - start_time):.2f} seconds!")
+
+        combined_audio = await self.combine_audio_files(audio_files)
+        return combined_audio, running_text
 
 class TextExtractor:
     @staticmethod
     async def extract_from_pdf(file_path: str) -> str:
-        # Code for extracting text from PDF
-        pass
+        async with aiofiles.open(file_path, mode='rb') as f:
+            pdf_reader = pypdf.PdfReader(io.BytesIO(await f.read()))
+            return "\n".join(page.extract_text() for page in pdf_reader.pages if page.extract_text())
 
     @staticmethod
     async def extract_from_txt(file_path: str) -> str:
-        # Code for extracting text from TXT
-        pass
+        async with aiofiles.open(file_path, mode='r', encoding='utf-8') as f:
+            return await f.read()
 
     @classmethod
     async def extract_text(cls, file_path: str) -> str:
-        # Code for extracting text based on file type
-        pass
+        _, file_extension = os.path.splitext(file_path)
+        if file_extension.lower() == '.pdf':
+            return await cls.extract_from_pdf(file_path)
+        elif file_extension.lower() == '.txt':
+            return await cls.extract_from_txt(file_path)
+        else:
+            raise ValueError(f"Unsupported file type: {file_extension}")
+
 
 async def process_input(input_text: str, input_file, language: str, speaker1: str, speaker2: str, api_key: str) -> Tuple[str, str]:
     st.info("Starting podcast generation...")
@@ -67,9 +127,18 @@ async def process_input(input_text: str, input_file, language: str, speaker1: st
     speaker1 = voice_names.get(speaker1, "en-US-AndrewMultilingualNeural")
     speaker2 = voice_names.get(speaker2, "en-US-AvaMultilingualNeural")
 
-    # Extract text if a file is provided
+# Check if input is provided
+    if not input_text and not input_file:
+        st.error("Please provide input text or upload a file.")
+        return None, None
+
+    # Extract text if file is provided
     if input_file:
-        input_text = await TextExtractor.extract_text(input_file.name)
+        try:
+            input_text = await TextExtractor.extract_text(input_file.name)
+        except Exception as e:
+            st.error(f"Error extracting text from file: {e}")
+            return None, None
 
     # Check API key
     if not api_key:
@@ -78,12 +147,26 @@ async def process_input(input_text: str, input_file, language: str, speaker1: st
             st.error("API key not found. Please set GENAI_API_KEY in your environment.")
             return None, None
 
-    # Generate podcast
+    # Initialize PodcastGenerator
     podcast_generator = PodcastGenerator()
+
+    # Generate podcast script
     try:
-        combined_audio, running_text = await podcast_generator.generate_podcast(input_text, language, speaker1, speaker2, api_key)
+        podcast_json = await podcast_generator.generate_script(input_text, language, api_key)
+        running_text = "\n".join([f"Speaker {item['speaker']}: {item['line']}" for item in podcast_json['podcast']])
     except Exception as e:
-        st.error(f"Error during podcast generation: {e}")
+        st.error(f"Error generating podcast script: {e}")
+        return None, None
+
+    # Generate audio files
+    try:
+        audio_files = await asyncio.gather(*[
+            podcast_generator.tts_generate(item['line'], item['speaker'], speaker1, speaker2) 
+            for item in podcast_json['podcast']
+        ])
+        combined_audio = await podcast_generator.combine_audio_files(audio_files)
+    except Exception as e:
+        st.error(f"Error generating audio: {e}")
         return None, None
 
     end_time = time.time()
@@ -133,12 +216,16 @@ def main():
     ])
     api_key = st.text_input("Enter API Key", type="password")
 
-    if st.button("Generate Podcast"):
-        st.info("Processing...")
-        combined_audio, running_text = asyncio.run(process_input(input_text, input_file, language, speaker1, speaker2, api_key))
-        if combined_audio and running_text:
-            st.audio(combined_audio, format="audio/wav")
-            st.text_area("Generated Script", running_text, height=300)
+if st.button("Generate Podcast"):
+    st.info("Processing...")
+    combined_audio, running_text = asyncio.run(process_input(input_text, input_file, language, speaker1, speaker2, api_key))
+
+    if combined_audio and running_text:
+        st.audio(combined_audio, format="audio/wav")
+        st.text_area("Generated Script", running_text, height=300)
+    else:
+        st.error("Failed to generate podcast. Please check the inputs and try again.")
+
 
 if __name__ == "__main__":
     main()

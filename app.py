@@ -23,7 +23,7 @@ class PodcastGenerator:
     async def generate_script(self, prompt: str, language: str, api_key: str) -> Dict:
 
     example = """
-{
+    {
     "topic": "AGI",
     "podcast": [
         {
@@ -231,6 +231,11 @@ You are a professional podcast generator. Your task is to generate a professiona
 Follow this example structure:
 {example}
 """
+# Implement the API call or logic to generate the script
+return json.loads(example)
+
+
+
         user_prompt = f"Please generate a podcast script based on the following user input:\n{prompt}"
 
         messages = [

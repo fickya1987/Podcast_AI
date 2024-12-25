@@ -211,7 +211,7 @@ class PodcastGenerator:
             "line": "Peace."
         }
     ]
-}
+  }
         """
 
         if language == "Auto Detect":

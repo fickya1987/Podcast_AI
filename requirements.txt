@@ -1,0 +1,7 @@
+streamlit
+python-dotenv
+pydub
+google-generativeai
+aiofiles
+pypdf
+edge-tts

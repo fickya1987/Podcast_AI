@@ -1,0 +1,8 @@
+gradio
+gradio-client
+pydub
+google-generativeai
+pypdf
+edge-tts
+python-dotenv
+aiofiles

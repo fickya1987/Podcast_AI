@@ -453,8 +453,8 @@ iface = gr.Interface(
         gr.Audio(label="Generated Podcast Audio"),
         gr.Textbox(label="Running Text", lines=20)
     ],
-    title="Lestari Bahasa Podcast Multi Bahasa",
-    description="Talkshow Lestari Bahasa AI",
+    title="Gaman Bahasa Podcast Multi Bahasa",
+    description="Talkshow Gaman Bahasa AI",
     flagging_mode="never"
 )
 
